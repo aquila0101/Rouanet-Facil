@@ -41,10 +41,7 @@ arquivos_csv = sorted(
     key=extrair_numero
 )
 
-# Lista para armazenar dados de cada arquivo temporariamente
-data_to_insert = []
-
-# Processa cada arquivo CSV em ordem crescente de nome numérico
+# Processa e insere cada arquivo CSV individualmente no banco de dados
 for arquivo in arquivos_csv:
     caminho_arquivo = os.path.join(diretorio_csv, arquivo)
     
@@ -52,9 +49,17 @@ for arquivo in arquivos_csv:
         # Lê o arquivo CSV, carregando somente as colunas especificadas
         df_temp = pd.read_csv(caminho_arquivo, sep=',', encoding='utf-8', usecols=colunas)
         
-        # Converte os dados do DataFrame para uma lista de dicionários e adiciona à lista principal
-        data_to_insert.extend(df_temp.to_dict(orient='records'))
-        print(f"Arquivo '{arquivo}' processado com sucesso.")
+        # Converte os dados do DataFrame para uma lista de tuplas para inserção
+        registros = [tuple(row[col] for col in colunas) for _, row in df_temp.iterrows()]
+        
+        # Insere os dados do arquivo atual no banco de dados como uma operação independente
+        with conn:
+            conn.executemany(f'''
+            INSERT INTO projetos ({', '.join(colunas)}) 
+            VALUES ({', '.join(['?' for _ in colunas])})
+            ''', registros)
+        
+        print(f"Arquivo '{arquivo}' processado e inserido com sucesso.")
 
     except ValueError as ve:
         print(f"Erro de valor ao processar '{arquivo}': {ve}")
@@ -62,21 +67,6 @@ for arquivo in arquivos_csv:
         print(f"Arquivo '{arquivo}' não encontrado.")
     except Exception as e:
         print(f"Erro ao processar '{arquivo}': {e}")
-
-# Insere todos os dados no banco de dados em uma única operação
-try:
-    if data_to_insert:
-        with conn:
-            conn.executemany(f'''
-            INSERT INTO projetos ({', '.join(colunas)}) 
-            VALUES ({', '.join(['?' for _ in colunas])})
-            ''', [tuple(d[col] for col in colunas) for d in data_to_insert])
-        print("Dados inseridos com sucesso no banco de dados.")
-    else:
-        print("Nenhum dado para inserir.")
-
-except sqlite3.DatabaseError as db_err:
-    print(f"Erro ao inserir dados no banco de dados: {db_err}")
 
 # Fecha a conexão com o banco de dados
 conn.close()
